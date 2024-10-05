@@ -9,32 +9,54 @@ pub fn compress_remainder(values: &[f32]) -> Vec<u8> {
     todo!()
 }
 
-pub fn compress_bulk(values: &[f32], total_size: usize) -> Vec<u8> {
-    let result = Vec::<u8>::with_capacity(total_size);
+pub fn double_delta_simd(values: &[f32]) -> Vec<f32x4> {
     let simdd_size = values.len() / 4;
     let mut double_deltad = Vec::<f32x4>::with_capacity(simdd_size);
 
-    let mut prev = f32x4::from_array([
+    let mut curr = f32x4::from_array([
         values[0],
         values[simdd_size],
         values[simdd_size * 2],
         values[simdd_size * 3],
     ]);
-    double_deltad[0] = prev;
-    let mut prev_delta = f32x4::splat(0.0);
-    for i in 1..simdd_size {
-        let curr = f32x4::from_array([
-            values[i],
-            values[i * simdd_size],
-            values[i * simdd_size * 2],
-            values[i * simdd_size * 3],
-        ]);
-        let delta = curr - prev;
-        double_deltad[i] = delta - prev_delta;
-        prev = curr;
-        prev_delta = delta;
-    }
+    let prev = f32x4::from_array([
+        0.0,
+        values[simdd_size - 1],
+        values[simdd_size * 2 - 1],
+        values[simdd_size * 3 - 1],
+    ]);
+    let prev_prev = f32x4::from_array([
+        0.0,
+        values[simdd_size - 2],
+        values[simdd_size * 2 - 2],
+        values[simdd_size * 3 - 2],
+    ]);
+    let mut delta = curr - prev;
+    let prev_delta = prev - prev_prev;
 
+    double_deltad.push(delta - prev_delta);
+
+    delta[0] = 0.0;
+
+    for i in 1..simdd_size {
+        let next = f32x4::from_array([
+            values[i],
+            values[i + simdd_size],
+            values[i + simdd_size * 2],
+            values[i + simdd_size * 3],
+        ]);
+        let next_delta = next - curr;
+        let dd = next_delta - delta;
+        double_deltad.push(dd);
+        curr = next;
+        delta = next_delta;
+    }
+    return double_deltad;
+}
+
+pub fn compress_bulk(values: &[f32], total_size: usize) -> Vec<u8> {
+    let result = Vec::<u8>::with_capacity(total_size);
+    let double_deltad = double_delta_simd(values);
     return result;
 }
 
@@ -61,7 +83,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        assert_eq!(3, 4);
+    fn test_double_delta() {
+        #[rustfmt::skip]
+        let input = vec![
+            8.0, 7.0, 12.0, 14.0, 18.0, 
+            22.0, 25.0, 27.0, 32.0, 37.0,
+            73.0, 78.0, 83.0, 89.0, 92.0, 
+            24.0, 23.0, 27.0, 29.0, 32.0,
+        ];
+
+        let result = double_delta_simd(input.as_slice());
+        let expected = vec![
+            f32x4::from_array([8.0, 0.0, 31.0, -71.0]),
+            f32x4::from_array([-1.0, -1.0, -31.0, 67.0]),
+            f32x4::from_array([6.0, -1.0, 0.0, 5.0]),
+            f32x4::from_array([-3.0, 3.0, 1.0, -2.0]),
+            f32x4::from_array([2.0, 0.0, -3.0, 1.0]),
+        ];
+        assert_eq!(result.len(), expected.len());
+        for i in 0..result.len() {
+            assert_eq!(result[i], expected[i])
+        }
     }
 }
