@@ -1,5 +1,5 @@
 #![feature(portable_simd)]
-#![feature(trait_alias)]
+#![feature(iter_map_windows)]
 
 use std::{iter, ops::Range, simd::Simd};
 
@@ -94,7 +94,7 @@ fn double_delta_simd(values: &[i64]) -> impl Iterator<Item = MySimd> + use<'_> {
     return double_deltad;
 }
 
-fn rle_bitlanes_simd() {}
+fn rle_bitlanes_simd<I: Iterator<Item = MySimd>>(double_delta_list: I) {}
 
 fn compress_values_bulk(values: &[i64]) -> Vec<u8> {
     let double_deltad = double_delta_simd(values);
